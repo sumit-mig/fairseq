@@ -160,6 +160,7 @@ class AudioPretrainingTask(FairseqTask):
                     num_buckets=self.cfg.num_batch_buckets or int(self.cfg.tpu),
                     text_compression_level=text_compression_level,
                     compute_mask=compute_mask,
+                    corpus_key=task_cfg.corpus_key,
                     **mask_args,
                 )
             else:

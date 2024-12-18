@@ -204,6 +204,9 @@ class Wav2Vec2CtcConfig(Wav2Vec2AsrConfig):
     blank_weight: float = 0
     blank_mode: str = "add"
 
+    freeze_base_model: bool = False
+    load_model_using_strict: bool = True
+
 
 @register_model("wav2vec_ctc", dataclass=Wav2Vec2CtcConfig)
 class Wav2VecCtc(BaseFairseqModel):
@@ -222,7 +225,13 @@ class Wav2VecCtc(BaseFairseqModel):
     def build_model(cls, cfg: Wav2Vec2CtcConfig, task: FairseqTask):
         """Build a new model instance."""
         w2v_encoder = Wav2VecEncoder(cfg, len(task.target_dictionary))
-        return cls(cfg, w2v_encoder)
+        model = cls(cfg, w2v_encoder)
+        # logger.info(f"model type =  {type(model)}")
+        # logger.info(model)
+        if getattr(cfg, "freeze_base_model", False):
+            model.freeze_base_model()
+        return model
+        # return cls(cfg, w2v_encoder)
 
     def get_logits(self, net_output, normalize=False):
         logits = net_output["encoder_out"]
@@ -266,6 +275,15 @@ class Wav2VecCtc(BaseFairseqModel):
     def forward(self, **kwargs):
         x = self.w2v_encoder(**kwargs)
         return x
+    
+    def freeze_base_model(self):
+        """Freeze all parameters except adapters"""
+        logger.info("Freezing Base Model parameters")
+        for name, param in self.named_parameters():
+            if not (('adapter' in name) or ('final' in name)):
+                param.requires_grad = False
+            else:
+                logger.info(f"Layer {name} requires_grad = {param.requires_grad}")
 
 
 @dataclass
@@ -418,13 +436,13 @@ class Wav2VecEncoder(FairseqEncoder):
 
             cfg.w2v_args = w2v_args
 
-            logger.info(w2v_args)
-
         else:
             state = None
             w2v_args = cfg.w2v_args
             if isinstance(w2v_args, Namespace):
                 cfg.w2v_args = w2v_args = convert_namespace_to_omegaconf(w2v_args)
+
+        # logger.info(w2v_args)
 
         self.is_d2v_multi = "data2vec_multi" in w2v_args.model.get("_name", None)
 
@@ -444,6 +462,9 @@ class Wav2VecEncoder(FairseqEncoder):
                 for _args in args_replacement:
                     if hasattr(cfg, _args) and getattr(cfg, _args, None) is not None:
                         w2v_args.model[_args] = getattr(cfg, _args, None)
+            
+            logger.info(" w2v_args.model = ")
+            logger.info(w2v_args.model)
 
             if hasattr(cfg, "checkpoint_activations") and cfg.checkpoint_activations:
                 with open_dict(w2v_args):
@@ -452,7 +473,15 @@ class Wav2VecEncoder(FairseqEncoder):
             w2v_args.task.data = cfg.data
             task = tasks.setup_task(w2v_args.task, from_checkpoint=True)
             model = task.build_model(w2v_args.model, from_checkpoint=True)
-            model.remove_pretraining_modules()
+            try:
+                model.remove_pretraining_modules()
+            except AttributeError as e:
+                logger.warning(f"Could not find remove_pretraining_modules attribute in {type(model)}")
+            
+            logger.info("===="*30)
+            logger.info("w2v_args.model = ")
+            logger.info(w2v_args.model)
+            logger.info("===="*30)
             d = w2v_args.model.encoder_embed_dim
         else:
             assert cfg.normalize
@@ -578,7 +607,8 @@ class Wav2VecEncoder(FairseqEncoder):
                         del state["model"][k]
 
             print(model)
-            model.load_state_dict(state["model"], strict=True)
+            
+            model.load_state_dict(state["model"], strict=cfg.load_model_using_strict)
 
     def set_num_updates(self, num_updates):
         """Set the number of parameters updates."""

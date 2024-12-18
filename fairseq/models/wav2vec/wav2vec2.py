@@ -830,6 +830,10 @@ class Wav2Vec2Model(BaseFairseqModel):
         return pen
 
     def remove_pretraining_modules(self, last_layer=None):
+        # print("==="*30)
+        print("Removing pretraining modules from wav2vec2.py")
+        # print("==="*30)
+        
         self.quantizer = None
         self.project_q = None
         self.target_glu = None
@@ -1009,7 +1013,7 @@ class TransformerEncoder(nn.Module):
             layer = checkpoint_wrapper(layer)
         return layer
 
-    def __init__(self, args: Wav2Vec2Config, skip_pos_conv: bool = False, override_encoder_layer: int = None):
+    def __init__(self, args: Wav2Vec2Config):
         super().__init__()
 
         self.dropout = args.dropout
@@ -1045,8 +1049,7 @@ class TransformerEncoder(nn.Module):
             self.pos_conv = make_conv_block(
                 self.embedding_dim, k, args.conv_pos_groups, num_layers
             )
-        elif skip_pos_conv:
-            self.pos_conv = None
+
         else:
             self.pos_conv = make_conv_pos(
                 self.embedding_dim,
@@ -1057,13 +1060,8 @@ class TransformerEncoder(nn.Module):
                 else False,
             )
 
-        if override_encoder_layer is None:
-            encoder_layers = args.encoder_layers
-        else:
-            encoder_layers = override_encoder_layer
-
         self.layers = nn.ModuleList(
-            [self.build_encoder_layer(args, layer_idx=ii) for ii in range(encoder_layers)]
+            [self.build_encoder_layer(args, layer_idx=ii) for ii in range(args.encoder_layers)]
         )
         self.layer_norm_first = args.layer_norm_first
         self.layer_norm = LayerNorm(self.embedding_dim)
@@ -1093,10 +1091,9 @@ class TransformerEncoder(nn.Module):
         if padding_mask is not None:
             x = index_put(x, padding_mask, 0)
 
-        if self.pos_conv is not None:
-            x_conv = self.pos_conv(x.transpose(1, 2))
-            x_conv = x_conv.transpose(1, 2)
-            x = x + x_conv
+        x_conv = self.pos_conv(x.transpose(1, 2))
+        x_conv = x_conv.transpose(1, 2)
+        x = x + x_conv
 
         if not self.layer_norm_first:
             x = self.layer_norm(x)
@@ -1492,6 +1489,8 @@ class TransformerSentenceEncoderWithAdapterLayer(TransformerSentenceEncoderLayer
             need_weights=need_weights,
             att_args=att_args,
         )
+        import pdb 
+        pdb.set_trace()
         assert corpus_key is not None
         assert len(set(corpus_key)) == 1, f"corpus_key items are not same {corpus_key}"
         y = self.adapter_layer(x, corpus_key[0])

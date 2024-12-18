@@ -108,6 +108,9 @@ class AudioFinetuningConfig(AudioPretrainingConfig):
             "help": "override default dictionary location"
         }
     )
+    corpus_key: Optional[int] = 1
+    # corpus_key = 1
+
 
 @register_task("audio_finetuning", dataclass=AudioFinetuningConfig)
 class AudioFinetuningTask(AudioPretrainingTask):
